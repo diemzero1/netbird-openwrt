@@ -1,0 +1,264 @@
+syntax = "proto3";
+
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+option go_package = "/proto";
+
+package daemon;
+
+service DaemonService {
+  // Login uses setup key to prepare configuration for the daemon.
+  rpc Login(LoginRequest) returns (LoginResponse) {}
+
+  // WaitSSOLogin uses the userCode to validate the TokenInfo and
+  // waits for the user to continue with the login on a browser
+  rpc WaitSSOLogin(WaitSSOLoginRequest) returns (WaitSSOLoginResponse) {}
+
+  // Up starts engine work in the daemon.
+  rpc Up(UpRequest) returns (UpResponse) {}
+
+  // Status of the service.
+  rpc Status(StatusRequest) returns (StatusResponse) {}
+
+  // Down engine work in the daemon.
+  rpc Down(DownRequest) returns (DownResponse) {}
+
+  // GetConfig of the daemon.
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse) {}
+
+  // List available network routes
+  rpc ListRoutes(ListRoutesRequest) returns (ListRoutesResponse) {}
+
+  // Select specific routes
+  rpc SelectRoutes(SelectRoutesRequest) returns (SelectRoutesResponse) {}
+
+  // Deselect specific routes
+  rpc DeselectRoutes(SelectRoutesRequest) returns (SelectRoutesResponse) {}
+
+  // DebugBundle creates a debug bundle
+  rpc DebugBundle(DebugBundleRequest) returns (DebugBundleResponse) {}
+
+  // SetLogLevel sets the log level of the daemon
+  rpc SetLogLevel(SetLogLevelRequest) returns (SetLogLevelResponse) {}
+};
+
+message LoginRequest {
+  // setupKey wiretrustee setup key.
+  string setupKey = 1;
+
+  // This is the old PreSharedKey field which will be deprecated in favor of optionalPreSharedKey field that is defined as optional
+  // to allow clearing of preshared key while being able to persist in the config file.
+  string preSharedKey = 2 [deprecated = true];
+
+  // managementUrl to authenticate.
+  string managementUrl = 3;
+
+  // adminUrl to manage keys.
+  string adminURL = 4;
+
+  // natExternalIPs map list of external IPs
+  repeated string natExternalIPs = 5;
+
+  // cleanNATExternalIPs clean map list of external IPs.
+  // This is needed because the generated code
+  // omits initialized empty slices due to omitempty tags
+  bool cleanNATExternalIPs = 6;
+
+  bytes customDNSAddress = 7;
+
+  bool isLinuxDesktopClient = 8;
+
+  string hostname = 9;
+
+  optional bool rosenpassEnabled = 10;
+
+  optional string interfaceName = 11;
+
+  optional int64 wireguardPort = 12;
+
+  optional string optionalPreSharedKey = 13;
+
+  optional bool disableAutoConnect = 14;
+
+  optional bool serverSSHAllowed = 15;
+
+  optional bool rosenpassPermissive = 16;
+
+  repeated string extraIFaceBlacklist = 17;
+
+  optional bool networkMonitor = 18;
+}
+
+message LoginResponse {
+  bool   needsSSOLogin = 1;
+  string userCode = 2;
+  string verificationURI = 3;
+  string verificationURIComplete = 4;
+}
+
+message WaitSSOLoginRequest {
+  string userCode = 1;
+  string hostname = 2;
+}
+
+message WaitSSOLoginResponse {}
+
+message UpRequest {}
+
+message UpResponse {}
+
+message StatusRequest{
+  bool getFullPeerStatus = 1;
+}
+
+message StatusResponse{
+  // status of the server.
+  string status = 1;
+  FullStatus fullStatus = 2;
+  // NetBird daemon version
+  string daemonVersion = 3;
+}
+
+message DownRequest {}
+
+message DownResponse {}
+
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  // managementUrl settings value.
+  string managementUrl = 1;
+
+  // configFile settings value.
+  string configFile = 2;
+
+  // logFile settings value.
+  string logFile = 3;
+
+  // preSharedKey settings value.
+  string preSharedKey = 4;
+
+  // adminURL settings value.
+  string adminURL = 5;
+}
+
+// PeerState contains the latest state of a peer
+message PeerState {
+  string IP = 1;
+  string pubKey = 2;
+  string connStatus = 3;
+  google.protobuf.Timestamp connStatusUpdate = 4;
+  bool relayed = 5;
+  bool direct = 6;
+  string localIceCandidateType = 7;
+  string remoteIceCandidateType = 8;
+  string fqdn = 9;
+  string localIceCandidateEndpoint = 10;
+  string remoteIceCandidateEndpoint = 11;
+  google.protobuf.Timestamp lastWireguardHandshake = 12;
+  int64 bytesRx = 13;
+  int64 bytesTx = 14;
+  bool rosenpassEnabled = 15;
+  repeated string routes = 16;
+  google.protobuf.Duration latency = 17;
+}
+
+// LocalPeerState contains the latest state of the local peer
+message LocalPeerState {
+  string IP = 1;
+  string pubKey = 2;
+  bool  kernelInterface = 3;
+  string fqdn = 4;
+  bool rosenpassEnabled = 5;
+  bool rosenpassPermissive = 6;
+  repeated string routes = 7;
+}
+
+// SignalState contains the latest state of a signal connection
+message SignalState {
+  string URL = 1;
+  bool connected = 2;
+  string error = 3;
+}
+
+// ManagementState contains the latest state of a management connection
+message ManagementState {
+  string URL = 1;
+  bool connected = 2;
+  string error = 3;
+}
+
+// RelayState contains the latest state of the relay
+message RelayState {
+  string URI = 1;
+  bool available = 2;
+  string error = 3;
+}
+
+message NSGroupState {
+  repeated string servers = 1;
+  repeated string domains = 2;
+  bool enabled = 3;
+  string error = 4;
+}
+
+// FullStatus contains the full state held by the Status instance
+message FullStatus {
+  ManagementState managementState = 1;
+  SignalState     signalState = 2;
+  LocalPeerState  localPeerState = 3;
+  repeated PeerState peers = 4;
+  repeated RelayState relays = 5;
+  repeated NSGroupState dns_servers = 6;
+}
+
+message ListRoutesRequest {
+}
+
+message ListRoutesResponse {
+  repeated Route routes = 1;
+}
+
+message SelectRoutesRequest {
+  repeated string routeIDs = 1;
+  bool append = 2;
+  bool all = 3;
+}
+
+message SelectRoutesResponse {
+}
+
+message Route {
+  string ID = 1;
+  string network = 2;
+  bool selected = 3;
+}
+
+message DebugBundleRequest {
+  bool anonymize = 1;
+  string status = 2;
+}
+
+message DebugBundleResponse {
+  string path = 1;
+}
+
+enum LogLevel {
+  UNKNOWN = 0;
+  PANIC = 1;
+  FATAL = 2;
+  ERROR = 3;
+  WARN = 4;
+  INFO = 5;
+  DEBUG = 6;
+  TRACE = 7;
+}
+
+message SetLogLevelRequest {
+  LogLevel level = 1;
+}
+
+message SetLogLevelResponse {
+}

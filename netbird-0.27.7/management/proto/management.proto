@@ -1,0 +1,373 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "/proto";
+
+package management;
+
+service ManagementService {
+
+  // Login logs in peer. In case server returns codes.PermissionDenied this endpoint can be used to register Peer providing LoginRequest.setupKey
+  // Returns encrypted LoginResponse in EncryptedMessage.Body
+  rpc Login(EncryptedMessage) returns (EncryptedMessage) {}
+
+  // Sync enables peer synchronization. Each peer that is connected to this stream will receive updates from the server.
+  // For example, if a new peer has been added to an account all other connected peers will receive this peer's Wireguard public key as an update
+  // The initial SyncResponse contains all of the available peers so the local state can be refreshed
+  // Returns encrypted SyncResponse in EncryptedMessage.Body
+  rpc Sync(EncryptedMessage) returns (stream EncryptedMessage) {}
+
+  // Exposes a Wireguard public key of the Management service.
+  // This key is used to support message encryption between client and server
+  rpc GetServerKey(Empty) returns (ServerKeyResponse) {}
+
+  // health check endpoint
+  rpc isHealthy(Empty) returns (Empty) {}
+
+  // Exposes a device authorization flow information
+  // This is used for initiating a Oauth 2 device authorization grant flow
+  // which will be used by our clients to Login.
+  // EncryptedMessage of the request has a body of DeviceAuthorizationFlowRequest.
+  // EncryptedMessage of the response has a body of DeviceAuthorizationFlow.
+  rpc GetDeviceAuthorizationFlow(EncryptedMessage) returns (EncryptedMessage) {}
+
+  // Exposes a PKCE authorization code flow information
+  // This is used for initiating a Oauth 2 authorization grant flow
+  // with Proof Key for Code Exchange (PKCE) which will be used by our clients to Login.
+  // EncryptedMessage of the request has a body of PKCEAuthorizationFlowRequest.
+  // EncryptedMessage of the response has a body of PKCEAuthorizationFlow.
+  rpc GetPKCEAuthorizationFlow(EncryptedMessage) returns (EncryptedMessage) {}
+}
+
+message EncryptedMessage {
+  // Wireguard public key
+  string wgPubKey = 1;
+
+  // encrypted message Body
+  bytes body = 2;
+  // Version of the Wiretrustee Management Service protocol
+  int32 version = 3;
+}
+
+message SyncRequest {}
+
+// SyncResponse represents a state that should be applied to the local peer (e.g. Wiretrustee servers config as well as local peer and remote peers configs)
+message SyncResponse {
+
+  // Global config
+  WiretrusteeConfig wiretrusteeConfig = 1;
+
+  // Deprecated. Use NetworkMap.PeerConfig
+  PeerConfig peerConfig = 2;
+
+  // Deprecated. Use NetworkMap.RemotePeerConfig
+  repeated RemotePeerConfig remotePeers = 3;
+
+  // Indicates whether remotePeers array is empty or not to bypass protobuf null and empty array equality.
+  // Deprecated. Use NetworkMap.remotePeersIsEmpty
+  bool remotePeersIsEmpty = 4;
+
+  NetworkMap NetworkMap = 5;
+}
+
+message LoginRequest {
+  // Pre-authorized setup key (can be empty)
+  string setupKey = 1;
+  // Meta data of the peer (e.g. name, os_name, os_version,
+  PeerSystemMeta meta = 2;
+  // SSO token (can be empty)
+  string jwtToken = 3;
+  // Can be absent for now.
+  PeerKeys peerKeys = 4;
+
+}
+// PeerKeys is additional peer info like SSH pub key and WireGuard public key.
+// This message is sent on Login or register requests, or when a key rotation has to happen.
+message PeerKeys {
+
+  // sshPubKey represents a public SSH key of the peer. Can be absent.
+  bytes sshPubKey = 1;
+  // wgPubKey represents a public WireGuard key of the peer. Can be absent.
+  bytes wgPubKey = 2;
+}
+
+// Environment is part of the PeerSystemMeta and describes the environment the agent is running in.
+message Environment {
+  // cloud is the cloud provider the agent is running in if applicable.
+  string cloud = 1;
+  // platform is the platform the agent is running on if applicable.
+  string platform = 2;
+}
+
+// PeerSystemMeta is machine meta data like OS and version.
+message PeerSystemMeta {
+  string hostname = 1;
+  string goOS = 2;
+  string kernel = 3;
+  string core = 4;
+  string platform = 5;
+  string OS = 6;
+  string wiretrusteeVersion = 7;
+  string uiVersion = 8;
+  string kernelVersion = 9;
+  string OSVersion = 10;
+  repeated NetworkAddress networkAddresses = 11;
+  string sysSerialNumber = 12;
+  string sysProductName = 13;
+  string sysManufacturer = 14;
+  Environment environment = 15;
+}
+
+message LoginResponse {
+  // Global config
+  WiretrusteeConfig wiretrusteeConfig = 1;
+  // Peer local config
+  PeerConfig peerConfig = 2;
+}
+
+message ServerKeyResponse {
+  // Server's Wireguard public key
+  string key = 1;
+  // Key expiration timestamp after which the key should be fetched again by the client
+  google.protobuf.Timestamp expiresAt = 2;
+  // Version of the Wiretrustee Management Service protocol
+  int32 version = 3;
+}
+
+message Empty {}
+
+// WiretrusteeConfig is a common configuration of any Wiretrustee peer. It contains STUN, TURN, Signal and Management servers configurations
+message WiretrusteeConfig {
+  // a list of STUN servers
+  repeated HostConfig stuns = 1;
+  // a list of TURN servers
+  repeated ProtectedHostConfig turns = 2;
+
+  // a Signal server config
+  HostConfig signal = 3;
+}
+
+// HostConfig describes connection properties of some server (e.g. STUN, Signal, Management)
+message HostConfig {
+  // URI of the resource e.g. turns://stun.wiretrustee.com:4430 or signal.wiretrustee.com:10000
+  string uri = 1;
+  Protocol protocol = 2;
+
+  enum Protocol {
+    UDP = 0;
+    TCP = 1;
+    HTTP = 2;
+    HTTPS = 3;
+    DTLS = 4;
+  }
+}
+// ProtectedHostConfig is similar to HostConfig but has additional user and password
+// Mostly used for TURN servers
+message ProtectedHostConfig {
+  HostConfig hostConfig = 1;
+  string user = 2;
+  string password = 3;
+}
+
+// PeerConfig represents a configuration of a "our" peer.
+// The properties are used to configure local Wireguard
+message PeerConfig {
+  // Peer's virtual IP address within the Wiretrustee VPN (a Wireguard address config)
+  string  address = 1;
+  // Wiretrustee DNS server (a Wireguard DNS config)
+  string dns = 2;
+
+  // SSHConfig of the peer.
+  SSHConfig sshConfig = 3;
+  // Peer fully qualified domain name
+  string fqdn = 4;
+}
+
+// NetworkMap represents a network state of the peer with the corresponding configuration parameters to establish peer-to-peer connections
+message NetworkMap {
+  // Serial is an ID of the network state to be used by clients to order updates.
+  // The larger the Serial the newer the configuration.
+  // E.g. the client app should keep track of this id locally and discard all the configurations with a lower value
+  uint64 Serial = 1;
+
+  // PeerConfig represents configuration of a peer
+  PeerConfig peerConfig = 2;
+
+  // RemotePeerConfig represents a list of remote peers that the receiver can connect to
+  repeated RemotePeerConfig remotePeers = 3;
+
+  // Indicates whether remotePeers array is empty or not to bypass protobuf null and empty array equality.
+  bool remotePeersIsEmpty = 4;
+
+  // List of routes to be applied
+  repeated Route Routes = 5;
+
+  // DNS config to be applied
+  DNSConfig DNSConfig = 6;
+
+  // RemotePeerConfig represents a list of remote peers that the receiver can connect to
+  repeated RemotePeerConfig offlinePeers = 7;
+
+  // FirewallRule represents a list of firewall rules to be applied to peer
+  repeated FirewallRule FirewallRules = 8;
+
+  // firewallRulesIsEmpty indicates whether FirewallRule array is empty or not to bypass protobuf null and empty array equality.
+  bool firewallRulesIsEmpty = 9;
+}
+
+// RemotePeerConfig represents a configuration of a remote peer.
+// The properties are used to configure WireGuard Peers sections
+message RemotePeerConfig {
+
+  // A WireGuard public key of a remote peer
+  string wgPubKey = 1;
+
+  // WireGuard allowed IPs of a remote peer e.g. [10.30.30.1/32]
+  repeated string allowedIps = 2;
+
+  // SSHConfig is a SSH config of the remote peer. SSHConfig.sshPubKey should be ignored because peer knows it's SSH key.
+  SSHConfig sshConfig = 3;
+
+  // Peer fully qualified domain name
+  string fqdn = 4;
+
+}
+
+// SSHConfig represents SSH configurations of a peer.
+message SSHConfig {
+  // sshEnabled indicates whether a SSH server is enabled on this peer
+  bool sshEnabled = 1;
+
+  // sshPubKey is a SSH public key of a peer to be added to authorized_hosts.
+  // This property should be ignore if SSHConfig comes from PeerConfig.
+  bytes sshPubKey = 2;
+}
+
+// DeviceAuthorizationFlowRequest empty struct for future expansion
+message DeviceAuthorizationFlowRequest {}
+// DeviceAuthorizationFlow represents Device Authorization Flow information
+// that can be used by the client to login initiate a Oauth 2.0 device authorization grant flow
+// see https://datatracker.ietf.org/doc/html/rfc8628
+message DeviceAuthorizationFlow {
+  // An IDP provider , (eg. Auth0)
+  provider Provider = 1;
+  ProviderConfig ProviderConfig = 2;
+
+  enum provider {
+    HOSTED = 0;
+  }
+}
+
+// PKCEAuthorizationFlowRequest empty struct for future expansion
+message PKCEAuthorizationFlowRequest {}
+
+// PKCEAuthorizationFlow represents Authorization Code Flow information
+// that can be used by the client to login initiate a Oauth 2.0 authorization code grant flow
+// with Proof Key for Code Exchange (PKCE). See https://datatracker.ietf.org/doc/html/rfc7636
+message PKCEAuthorizationFlow {
+  ProviderConfig ProviderConfig = 1;
+}
+
+// ProviderConfig has all attributes needed to initiate a device/pkce authorization flow
+message ProviderConfig {
+  // An IDP application client id
+  string ClientID = 1;
+  // An IDP application client secret
+  string ClientSecret = 2;
+  // An IDP API domain
+  // Deprecated. Use a DeviceAuthEndpoint and TokenEndpoint
+  string Domain = 3;
+  // An Audience for validation
+  string Audience = 4;
+  // DeviceAuthEndpoint is an endpoint to request device authentication code.
+  string DeviceAuthEndpoint = 5;
+  // TokenEndpoint is an endpoint to request auth token.
+  string TokenEndpoint = 6;
+  // Scopes provides the scopes to be included in the token request
+  string Scope = 7;
+  // UseIDToken indicates if the id token should be used for authentication
+  bool UseIDToken = 8;
+  // AuthorizationEndpoint is the endpoint of an IDP manager where clients can obtain authorization code.
+  string AuthorizationEndpoint = 9;
+  // RedirectURLs handles authorization code from IDP manager
+  repeated string RedirectURLs = 10;
+}
+
+// Route represents a route.Route object
+message Route {
+  string ID = 1;
+  string Network = 2;
+  int64  NetworkType = 3;
+  string Peer = 4;
+  int64  Metric = 5;
+  bool   Masquerade = 6;
+  string NetID = 7;
+}
+
+// DNSConfig represents a dns.Update
+message DNSConfig {
+  bool ServiceEnable = 1;
+  repeated NameServerGroup NameServerGroups = 2;
+  repeated CustomZone CustomZones = 3;
+}
+
+// CustomZone represents a dns.CustomZone
+message CustomZone {
+  string Domain = 1;
+  repeated SimpleRecord Records = 2;
+}
+
+// SimpleRecord represents a dns.SimpleRecord
+message SimpleRecord {
+  string Name = 1;
+  int64 Type = 2;
+  string Class = 3;
+  int64 TTL = 4;
+  string RData = 5;
+}
+
+// NameServerGroup represents a dns.NameServerGroup
+message NameServerGroup {
+  repeated NameServer NameServers = 1;
+  bool Primary = 2;
+  repeated string Domains = 3;
+  bool SearchDomainsEnabled = 4;
+}
+
+// NameServer represents a dns.NameServer
+message NameServer {
+  string IP = 1;
+  int64  NSType = 2;
+  int64  Port = 3;
+}
+
+// FirewallRule represents a firewall rule
+message FirewallRule {
+  string PeerIP = 1;
+  direction Direction = 2;
+  action Action = 3;
+  protocol Protocol = 4;
+  string Port = 5;
+
+  enum direction {
+    IN = 0;
+    OUT = 1;
+  }
+  enum action {
+    ACCEPT = 0;
+    DROP = 1;
+  }
+  enum protocol {
+    UNKNOWN = 0;
+    ALL = 1;
+    TCP = 2;
+    UDP = 3;
+    ICMP = 4;
+  }
+}
+
+message NetworkAddress {
+  string netIP = 1;
+  string mac = 2;
+}
